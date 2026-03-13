@@ -617,6 +617,11 @@
             color: var(--navy);
         }
 
+        .section-btn.clear {
+            background: var(--warning);
+            color: white;
+        }
+
         .accounts-scroll {
             display: flex;
             gap: 12px;
@@ -1522,6 +1527,33 @@
 
         .cat-list-btn.edit { background: var(--info); color: white; }
         .cat-list-btn.delete { background: var(--danger); color: white; }
+
+        .account-filter-info {
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+            color: var(--white);
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin: 0 20px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .account-filter-info span {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .account-filter-info button {
+            background: var(--gold);
+            color: var(--navy);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -1620,14 +1652,6 @@
             <button class="month-nav" onclick="changeMonth(1)">
                 <i class="fas fa-chevron-right"></i>
             </button>
-        </div>
-
-        <!-- SALDO MÊS ANTERIOR -->
-        <div class="previous-balance" id="previousBalance" style="display: none;">
-            <div>
-                <div class="previous-balance-label">Saldo do Mês Anterior</div>
-            </div>
-            <div class="previous-balance-value" id="previousBalanceValue">R$ 0,00</div>
         </div>
 
         <!-- DASHBOARD -->
@@ -2362,6 +2386,7 @@
             currentUser = null;
             userData = null;
             userRef = null;
+            selectedAccount = null;
             showLoginScreen();
             showToast('Desconectado');
         }
@@ -2532,48 +2557,147 @@
             return totalIncome - totalExpense;
         }
 
+        function calculateAccountBalance(accountId) {
+            const acc = accounts[accountId];
+            if (!acc) return 0;
+            
+            let balance = acc.balance || 0;
+            
+            transactions.forEach(t => {
+                if (t.account === accountId) {
+                    if (t.type === 'income') {
+                        balance += t.amount;
+                    } else {
+                        balance -= t.amount;
+                    }
+                }
+            });
+            
+            return balance;
+        }
+
         function calculateGoalsBalance() {
             return goals.reduce((sum, g) => sum + (g.current || 0), 0);
         }
 
+        // ============================================
+        // FILTRO POR CONTA
+        // ============================================
+        function selectAccount(account) {
+            if (account === 'goals') {
+                showSection('goals');
+                return;
+            }
+            
+            // Toggle: se já está selecionada, deseleciona
+            if (selectedAccount === account) {
+                selectedAccount = null;
+                document.querySelectorAll('.account-card').forEach(c => c.classList.remove('selected'));
+                showToast('Mostrando todas as contas');
+            } else {
+                selectedAccount = account;
+                document.querySelectorAll('.account-card').forEach(c => c.classList.remove('selected'));
+                const card = document.querySelector(`.account-card[data-account="${account}"]`);
+                if (card) card.classList.add('selected');
+                const acc = accounts[account];
+                if (acc) showToast(`Filtrando: ${acc.name}`);
+            }
+            
+            loadData();
+        }
+
+        function clearAccountFilter() {
+            selectedAccount = null;
+            document.querySelectorAll('.account-card').forEach(c => c.classList.remove('selected'));
+            loadData();
+            showToast('Mostrando todas as contas');
+        }
+
+        // ============================================
+        // LOAD DATA COM FILTRO POR CONTA
+        // ============================================
         function loadData() {
             const currentMonth = currentDate.getMonth();
             const currentYear = currentDate.getFullYear();
             
-            const monthTransactions = transactions.filter(t => 
+            // Filtra transações por conta selecionada
+            let monthTransactions = transactions.filter(t => 
                 t.month === currentMonth && t.year === currentYear
             );
+            
+            // Aplica filtro por conta
+            if (selectedAccount) {
+                monthTransactions = monthTransactions.filter(t => t.account === selectedAccount);
+            }
             
             const prevMonth = new Date(currentDate);
             prevMonth.setMonth(prevMonth.getMonth() - 1);
             const prevMonthBalance = calculateBalanceUpToMonth(prevMonth.getFullYear(), prevMonth.getMonth());
             
-            if (prevMonthBalance !== 0) {
-                document.getElementById('previousBalance').style.display = 'flex';
-                document.getElementById('previousBalanceValue').textContent = formatMoney(prevMonthBalance);
+            // Cálculos específicos da conta selecionada ou geral
+            let income, expense, balance;
+            
+            if (selectedAccount) {
+                // Calcula apenas para a conta selecionada
+                const accBalance = calculateAccountBalance(selectedAccount);
+                income = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+                expense = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                balance = accBalance;
+                
+                // Mostra info de filtro
+                showAccountFilterInfo();
             } else {
-                document.getElementById('previousBalance').style.display = 'none';
+                // Calcula geral
+                income = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+                expense = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                balance = calculateBalanceUpToMonth(currentYear, currentMonth);
+                
+                // Esconde info de filtro
+                hideAccountFilterInfo();
             }
             
-            const income = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-            const expense = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
             const goalsTotal = calculateGoalsBalance();
-            const accumulatedBalance = calculateBalanceUpToMonth(currentYear, currentMonth);
             
             document.getElementById('totalIncome').textContent = formatMoney(income);
             document.getElementById('totalExpense').textContent = formatMoney(expense);
-            document.getElementById('totalBalance').textContent = formatMoney(accumulatedBalance);
+            document.getElementById('totalBalance').textContent = formatMoney(balance);
             document.getElementById('goalsSummaryValue').textContent = formatMoney(goalsTotal) + ' guardados';
             
-            // ALERTA INTELIGENTE CORRIGIDO
-            updateSmartAlert(income, expense, goalsTotal, accumulatedBalance);
+            updateSmartAlert(income, expense, goalsTotal, balance);
             renderAccountsList();
             updateAccountsDisplay();
-            renderTransactions(monthTransactions, accumulatedBalance);
+            renderTransactions(monthTransactions, balance);
             updateChart(monthTransactions, 'all');
         }
 
-        // ALERTA INTELIGENTE ATUALIZADO COM AS REGRAS CORRETAS
+        function showAccountFilterInfo() {
+            let infoDiv = document.getElementById('accountFilterInfo');
+            if (!infoDiv) {
+                infoDiv = document.createElement('div');
+                infoDiv.id = 'accountFilterInfo';
+                infoDiv.className = 'account-filter-info';
+                const dashboard = document.getElementById('dashboardSection');
+                dashboard.insertBefore(infoDiv, dashboard.children[1]);
+            }
+            
+            const acc = accounts[selectedAccount];
+            infoDiv.innerHTML = `
+                <span>📊 Filtrando: ${acc ? acc.name : 'Conta'}</span>
+                <button onclick="clearAccountFilter()">Ver Todas</button>
+            `;
+            infoDiv.style.display = 'flex';
+        }
+
+        function hideAccountFilterInfo() {
+            const infoDiv = document.getElementById('accountFilterInfo');
+            if (infoDiv) {
+                infoDiv.style.display = 'none';
+            }
+        }
+
+        // ============================================
+        // ALERTA INTELIGENTE
+        // ============================================
         function updateSmartAlert(income, expense, goalsTotal, balance) {
             const alertBox = document.getElementById('smartAlert');
             const alertTitle = document.getElementById('alertTitle');
@@ -2582,7 +2706,7 @@
             if (income === 0 && expense === 0) {
                 alertBox.className = 'smart-alert warning';
                 alertTitle.textContent = '👋 Bem-vindo!';
-                alertText.textContent = 'Comece adicionando suas receitas e despesas';
+                alertText.textContent = selectedAccount ? 'Nenhuma transação nesta conta' : 'Comece adicionando suas receitas e despesas';
                 return;
             }
             
@@ -2590,28 +2714,23 @@
                 const percent = (expense / income) * 100;
                 
                 if (percent < 70) {
-                    // 0-70% gasto: Verde
                     alertBox.className = 'smart-alert success';
                     alertTitle.textContent = '🎉 Ótimo progresso!';
                     alertText.textContent = `Você está gastando apenas ${percent.toFixed(0)}% da sua renda. Continue assim!`;
                 } else if (percent >= 70 && percent < 80) {
-                    // 70-80% gasto: Amarelo
                     alertBox.className = 'smart-alert warning';
                     alertTitle.textContent = '⚠️ Atenção!';
                     alertText.textContent = `Você já usou ${percent.toFixed(0)}% da renda. Fique de olho nos gastos!`;
                 } else if (percent >= 80 && percent < 100) {
-                    // 80-100% gasto: Laranja
                     alertBox.className = 'smart-alert orange';
                     alertTitle.textContent = '🚨 Cuidado!';
                     alertText.textContent = `Gastos excessivos! Você já usou ${percent.toFixed(0)}% da renda.`;
                 } else {
-                    // 100%+ gasto: Vermelho
                     alertBox.className = 'smart-alert danger';
                     alertTitle.textContent = '❌ Precisamos melhorar!';
                     alertText.textContent = 'Sua gestão financeira precisa de atenção. Gastos acima da renda!';
                 }
             } else if (balance < 0) {
-                // Saldo negativo
                 alertBox.className = 'smart-alert danger';
                 alertTitle.textContent = '💸 Saldo Negativo';
                 alertText.textContent = 'Você está no vermelho. É hora de reorganizar suas finanças!';
@@ -2631,7 +2750,7 @@
                 const acc = accounts[accountId];
                 const balance = calculateAccountBalance(accountId);
                 html += `
-                    <div class="account-card ${acc.type}" onclick="selectAccount('${accountId}')" data-account="${accountId}">
+                    <div class="account-card ${acc.type} ${selectedAccount === accountId ? 'selected' : ''}" onclick="selectAccount('${accountId}')" data-account="${accountId}">
                         <div class="account-icon">${acc.icon}</div>
                         <div class="account-name">${acc.name}</div>
                         <div class="account-balance" id="balance-${accountId}">${formatMoney(balance)}</div>
@@ -2652,25 +2771,6 @@
             container.innerHTML = html;
         }
 
-        function calculateAccountBalance(accountId) {
-            const acc = accounts[accountId];
-            if (!acc) return 0;
-            
-            let balance = acc.balance || 0;
-            
-            transactions.forEach(t => {
-                if (t.account === accountId) {
-                    if (t.type === 'income') {
-                        balance += t.amount;
-                    } else {
-                        balance -= t.amount;
-                    }
-                }
-            });
-            
-            return balance;
-        }
-
         function updateAccountsDisplay() {
             Object.keys(accounts).forEach(accountId => {
                 const balance = calculateAccountBalance(accountId);
@@ -2679,17 +2779,6 @@
                     el.textContent = formatMoney(balance);
                 }
             });
-        }
-
-        function selectAccount(account) {
-            if (account === 'goals') {
-                showSection('goals');
-                return;
-            }
-            selectedAccount = account;
-            document.querySelectorAll('.account-card').forEach(c => c.classList.remove('selected'));
-            const card = document.querySelector(`.account-card[data-account="${account}"]`);
-            if (card) card.classList.add('selected');
         }
 
         function addAccount() {
@@ -2781,7 +2870,7 @@
         }
 
         // ============================================
-        // TRANSAÇÕES COM DESPESAS PENDENTES
+        // TRANSAÇÕES COM ORDENAÇÃO CORRIGIDA
         // ============================================
         function openTransactionModal(type) {
             currentType = type;
@@ -2861,21 +2950,20 @@
                 description: document.getElementById('description').value || category,
                 month: currentDate.getMonth(),
                 year: currentDate.getFullYear(),
-                // NOVO: Flag para despesa pendente
                 pending: false
             };
             
             if (editingTransaction) {
                 const index = transactions.findIndex(t => t.id === editingTransaction);
                 if (index > -1) {
-                    // Mantém o status pending se já existia
                     transaction.pending = transactions[index].pending;
                     transactions[index] = transaction;
                 }
             } else {
-                // Verifica se é despesa e se há saldo negativo
                 if (currentType === 'expense') {
-                    const currentBalance = calculateBalanceUpToMonth(currentDate.getFullYear(), currentDate.getMonth());
+                    const currentBalance = selectedAccount ? 
+                        calculateAccountBalance(selectedAccount) : 
+                        calculateBalanceUpToMonth(currentDate.getFullYear(), currentDate.getMonth());
                     if (currentBalance < 0) {
                         transaction.pending = true;
                     }
@@ -2889,15 +2977,14 @@
             showToast(editingTransaction ? 'Atualizado!' : 'Salvo!');
         }
 
-        // RENDERIZAÇÃO DE TRANSAÇÕES COM DESPESAS PENDENTES
+        // RENDERIZAÇÃO DE TRANSAÇÕES COM ORDENAÇÃO: ENTRADAS PRIMEIRO, DEPOIS SAÍDAS
         function renderTransactions(list, currentBalance) {
             const container = document.getElementById('recentTransactions');
             
-            // Separa transações pendentes e normais
+            // Processa despesas pendentes
             const pendingTransactions = list.filter(t => t.pending && t.type === 'expense');
             const normalTransactions = list.filter(t => !t.pending);
             
-            // Se há saldo positivo, processa pagamento automático das pendentes
             if (currentBalance > 0 && pendingTransactions.length > 0) {
                 let remainingBalance = currentBalance;
                 pendingTransactions.forEach(t => {
@@ -2906,16 +2993,21 @@
                         remainingBalance -= t.amount;
                     }
                 });
-                // Salva alterações se houve mudança
                 if (pendingTransactions.some(t => !t.pending)) {
                     saveToFirebase();
                 }
             }
             
-            // Reordena: pendentes primeiro, depois por data
-            const allTransactions = [...pendingTransactions, ...normalTransactions].sort((a, b) => {
-                if (a.pending && !b.pending) return -1;
-                if (!a.pending && b.pending) return 1;
+            // Combina todas as transações
+            const allTransactions = [...pendingTransactions, ...normalTransactions];
+            
+            // ORDENAÇÃO: Primeiro entradas (por data), depois saídas (por data)
+            allTransactions.sort((a, b) => {
+                // Primeiro ordena por tipo: income vem antes de expense
+                if (a.type === 'income' && b.type === 'expense') return -1;
+                if (a.type === 'expense' && b.type === 'income') return 1;
+                
+                // Se mesmo tipo, ordena por data (mais recente primeiro)
                 return new Date(b.date) - new Date(a.date);
             });
             
@@ -3004,16 +3096,24 @@
                 t.month === currentDate.getMonth() && t.year === currentDate.getFullYear()
             );
             
+            // Aplica filtro por conta
+            if (selectedAccount) {
+                list = list.filter(t => t.account === selectedAccount);
+            }
+            
             if (type !== 'all') {
                 list = list.filter(t => t.type === type);
             }
             
-            const currentBalance = calculateBalanceUpToMonth(currentDate.getFullYear(), currentDate.getMonth());
+            const currentBalance = selectedAccount ? 
+                calculateAccountBalance(selectedAccount) : 
+                calculateBalanceUpToMonth(currentDate.getFullYear(), currentDate.getMonth());
+            
             renderTransactions(list, currentBalance);
         }
 
         // ============================================
-        // GRÁFICO
+        // GRÁFICO FILTRADO POR CONTA
         // ============================================
         let currentChartFilter = 'all';
 
@@ -3022,9 +3122,14 @@
             document.querySelectorAll('.chart-filter').forEach(f => f.classList.remove('active'));
             event.target.classList.add('active');
             
-            const monthTransactions = transactions.filter(t => 
+            let monthTransactions = transactions.filter(t => 
                 t.month === currentDate.getMonth() && t.year === currentDate.getFullYear()
             );
+            
+            // Aplica filtro por conta
+            if (selectedAccount) {
+                monthTransactions = monthTransactions.filter(t => t.account === selectedAccount);
+            }
             
             updateChart(monthTransactions, type);
         }
@@ -3072,9 +3177,14 @@
         }
 
         function updateReportChart() {
-            const monthTransactions = transactions.filter(t => 
+            let monthTransactions = transactions.filter(t => 
                 t.month === currentDate.getMonth() && t.year === currentDate.getFullYear()
             );
+            
+            // Aplica filtro por conta no relatório também
+            if (selectedAccount) {
+                monthTransactions = monthTransactions.filter(t => t.account === selectedAccount);
+            }
             
             const income = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
             const expense = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
@@ -3272,7 +3382,9 @@
             
             const goal = goals.find(g => g.id === currentGoalId);
             if (goal) {
-                const currentBalance = calculateBalanceUpToMonth(currentDate.getFullYear(), currentDate.getMonth());
+                const currentBalance = selectedAccount ? 
+                    calculateAccountBalance(selectedAccount) : 
+                    calculateBalanceUpToMonth(currentDate.getFullYear(), currentDate.getMonth());
                 
                 if (amount > currentBalance) {
                     showToast('Saldo insuficiente para esta meta', 'error');
@@ -3430,13 +3542,27 @@
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             
-            const monthTransactions = transactions.filter(t => 
+            let monthTransactions = transactions.filter(t => 
                 t.month === currentDate.getMonth() && t.year === currentDate.getFullYear()
-            ).sort((a, b) => new Date(a.date) - new Date(b.date));
+            );
+            
+            // Aplica filtro por conta no PDF
+            if (selectedAccount) {
+                monthTransactions = monthTransactions.filter(t => t.account === selectedAccount);
+            }
+            
+            monthTransactions.sort((a, b) => {
+                if (a.type === 'income' && b.type === 'expense') return -1;
+                if (a.type === 'expense' && b.type === 'income') return 1;
+                return new Date(a.date) - new Date(b.date);
+            });
             
             const income = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
             const expense = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
             const savings = income > 0 ? ((income - expense) / income * 100).toFixed(1) : 0;
+            
+            const accountInfo = selectedAccount && accounts[selectedAccount] ? 
+                ` - ${accounts[selectedAccount].name}` : '';
             
             doc.setFillColor(15, 23, 42);
             doc.rect(0, 0, 210, 60, 'F');
@@ -3447,7 +3573,7 @@
             
             doc.setTextColor(255, 255, 255);
             doc.setFontSize(12);
-            doc.text(`Relatório - ${document.getElementById('currentMonth').textContent} ${currentDate.getFullYear()}`, 105, 50, { align: 'center' });
+            doc.text(`Relatório${accountInfo} - ${document.getElementById('currentMonth').textContent} ${currentDate.getFullYear()}`, 105, 50, { align: 'center' });
             
             doc.setTextColor(15, 23, 42);
             doc.setFontSize(16);
@@ -3472,8 +3598,8 @@
             doc.setTextColor(100);
             monthTransactions.filter(t => t.type === 'income').forEach(t => {
                 if (y > 280) { doc.addPage(); y = 20; }
-                const accountInfo = t.account && accounts[t.account] ? ` [${accounts[t.account].name}]` : '';
-                doc.text(`${formatDate(t.date)} - ${t.description} (${t.category})${accountInfo}`, 20, y);
+                const accountText = t.account && accounts[t.account] ? ` [${accounts[t.account].name}]` : '';
+                doc.text(`${formatDate(t.date)} - ${t.description} (${t.category})${accountText}`, 20, y);
                 doc.text(`+ ${formatMoney(t.amount)}`, 180, y, { align: 'right' });
                 y += 8;
             });
@@ -3489,14 +3615,14 @@
             doc.setTextColor(100);
             monthTransactions.filter(t => t.type === 'expense').forEach(t => {
                 if (y > 280) { doc.addPage(); y = 20; }
-                const accountInfo = t.account && accounts[t.account] ? ` [${accounts[t.account].name}]` : '';
+                const accountText = t.account && accounts[t.account] ? ` [${accounts[t.account].name}]` : '';
                 const pendingText = t.pending ? ' [PENDENTE]' : '';
-                doc.text(`${formatDate(t.date)} - ${t.description} (${t.category})${accountInfo}${pendingText}`, 20, y);
+                doc.text(`${formatDate(t.date)} - ${t.description} (${t.category})${accountText}${pendingText}`, 20, y);
                 doc.text(`- ${formatMoney(t.amount)}`, 180, y, { align: 'right' });
                 y += 8;
             });
             
-            if (goals.length > 0) {
+            if (goals.length > 0 && !selectedAccount) {
                 y += 10;
                 if (y > 250) { doc.addPage(); y = 20; }
                 doc.setFontSize(14);
@@ -3514,7 +3640,7 @@
                 });
             }
             
-            doc.save(`Financas_${currentDate.getMonth()}_${currentDate.getFullYear()}.pdf`);
+            doc.save(`Financas${accountInfo.replace(' ', '_')}_${currentDate.getMonth()}_${currentDate.getFullYear()}.pdf`);
             showToast('PDF gerado!');
         }
 
